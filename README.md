@@ -16,54 +16,37 @@ Copyright (C)2021 by John A Kline (john@johnkline.com)
    the drift value was exceeded), bad things would happen.  It would be
    determined that the console was an hour fast, it would then set the
    console back an hour (but keep DST), and an hours worth of data would
-   be lost as the timestamps would be duplicates.  DST periods can now
-   be specified in the VantageNext section, and setTime will be a no-op
-   durint time change windows.
-
-1. set_time_padding can now be specified in the VantageNext section
-   so that the padding can be tweaked (it is hardcoded at 0.75 seconds
-   in the Vantage driver).
-
-1. The actual padding used is also influenced by clock_drifts_sec which
-   should be set to the number of seonds your consoel loses in 24 hours
-   (negative number); or, if you console gains time, the number of seconds
-   gained in 24 hours.  clock_drift_secs defaults to -2.4 seconds.  With
-   careful setting of set_time_padding and clock_drift_secs, one might
-   be able to set max_drift to 2 seconds and still go days without
-   having the clock set.  This is desirable as setting the clock often
-   to zero to four or so read errors when reading loop packets.
-
-1. The day's cumulative rain is now calculated by calling
--   weewx.wxformulas.calculate_delta.
+   be lost as the timestamps would be duplicates.  DST periods can be
+   specified in the CC3000Next section, and setTime will be a no-op
+   during time change windows.
 
 # Installation Instructions
 
-1. Download the lastest release, weewx-vantagenext-0.1.zip, from the
-   [GitHub Repository](https://github.com/chaunceygardiner/weewx-vantagenext).
+1. Download the lastest release, weewx-cc3000next-0.1.zip, from the
+   [GitHub Repository](https://github.com/chaunceygardiner/weewx-cc3000next).
 
 1. Run the following command.
 
-   `sudo /home/weewx/bin/wee_extension --install weewx-vantagenext-0.1.zip`
+   `sudo /home/weewx/bin/wee_extension --install weewx-cc3000next-0.1.zip`
 
    Note: this command assumes weewx is installed in /home/weewx.  If it's installed
    elsewhere, adjust the path of wee_extension accordingly.
 
 1. Edit the `Station` section of weewx.conf.  Change the `station_type` value
-   to `VantageNext`.
+   to `CC3000Next`.
 
    ```
    [Station]
-       station_type = VantageNext
+       station_type = CC3000Next
    ```
 
-1. Edit the VantageNext section of weewx.conf to specify the connection type
-   and the port or host.  For example:
+1. Edit the CC3000Next section of weewx.conf to specify the port.
+   For example:
    ```
-    type = serial
-    port = /dev/vantage
+    port = /dev/cc3000
    ```
 
-1. Edit the VantageNext section of weewx.conf to add DST periods for your
+1. Edit the CC3000Next section of weewx.conf to add DST periods for your
    location.  Note: the year to the left of the equals sign is simply a
    string and is ingored  Also note, the first date MUST be the start
    of daylight savings time and the second must be the end.  As such, in
@@ -86,4 +69,4 @@ Copyright (C)2021 by John A Kline (john@johnkline.com)
 
 ## Licensing
 
-weewx-vantagenext is licensed under the GNU Public License v3.
+weewx-cc3000next is licensed under the GNU Public License v3.
