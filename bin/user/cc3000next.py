@@ -1056,7 +1056,8 @@ class CC3000Next(object):
 
     @staticmethod
     def _compose_set_time_command():
-        ts = time.time()
+        # It seems to take a good amount of time to set the clock.  Add 1s.
+        ts = time.time() + 1.0
         tstr = time.strftime("%Y/%m/%d %H:%M:%S", time.localtime(ts))
         log.info("Set time to %s (%s)" % (tstr, ts))
         return "TIME=%s" % tstr
