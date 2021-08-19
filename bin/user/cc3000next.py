@@ -151,7 +151,7 @@ from weewx.crc16 import crc16
 log = logging.getLogger(__name__)
 
 DRIVER_NAME = 'CC3000Next'
-DRIVER_VERSION = '0.01'
+DRIVER_VERSION = '0.03'
 
 def loader(config_dict, engine):
     return CC3000NextDriver(**config_dict[DRIVER_NAME])
@@ -1056,9 +1056,17 @@ class CC3000Next(object):
 
     @staticmethod
     def _compose_set_time_command():
-        # In practice, addng about 1.2s will get us close when seeting time.
-        ts = time.time() + 1.2
-        tstr = time.strftime("%Y/%m/%d %H:%M:%S", time.localtime(ts))
+        # The time can only be set to a full second.  As such, the actual
+        # time can vary wildly.  Let's sleep until the top of the second
+        # to get a better time set.
+        sleep_secs = 1.0 - (time.time() % 1)
+        # There is some lag,set time a little early.
+        sleep_secs -= 0.19
+        if sleep_secs > 0.0:
+            time.sleep(sleep_secs)
+        ts = time.time()
+        # Add back the time we subtracted from sleep so we get the right second.
+        tstr = time.strftime("%Y/%m/%d %H:%M:%S", time.localtime(ts + 0.19))
         log.info("Set time to %s (%s)" % (tstr, ts))
         return "TIME=%s" % tstr
 
