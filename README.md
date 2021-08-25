@@ -20,6 +20,11 @@ Copyright (C)2021 by John A Kline (john@johnkline.com)
    specified in the CC3000Next section, and setTime will be a no-op
    during time change windows.
 
+2. Setting the time now sleeps until approx. top of second in order to more
+   precisely set the time (since it can only be set in whole seconds).  There
+   is is a fudge of set_time_padding which can be set in weewx.conf and defaults
+   to 0.40 (seconds).
+
 # Installation Instructions
 
 1. Download the lastest release, weewx-cc3000next-0.1.zip, from the

@@ -151,7 +151,7 @@ from weewx.crc16 import crc16
 log = logging.getLogger(__name__)
 
 DRIVER_NAME = 'CC3000Next'
-DRIVER_VERSION = '0.03'
+DRIVER_VERSION = '0.4'
 
 def loader(config_dict, engine):
     return CC3000NextDriver(**config_dict[DRIVER_NAME])
@@ -453,6 +453,8 @@ class CC3000NextDriver(weewx.drivers.AbstractDevice):
             stn_dict.get('use_station_time', True))
         log.info('Using %s time for loop packets' %
                ('station' if self.use_station_time else 'computer'))
+        set_time_padding = float(stn_dict.get('set_time_padding', 0.40))
+        log.info('Using %f for set_time_padding' % set_time_padding)
         # start with the default sensormap, then augment with user-specified
         self.sensor_map = dict(self.DEFAULT_SENSOR_MAP)
         if 'sensor_map' in stn_dict:
@@ -472,7 +474,7 @@ class CC3000NextDriver(weewx.drivers.AbstractDevice):
         # track the last rain counter value so we can determine deltas
         self.last_rain = None
 
-        self.station = CC3000Next(port)
+        self.station = CC3000Next(port, set_time_padding)
         self.station.open()
 
         # report the station configuration
@@ -764,10 +766,12 @@ def _check_crc(buf):
 
 class CC3000Next(object):
     DEFAULT_PORT = '/dev/ttyUSB0'
+    DEFAULT_SET_TIME_PADDING = 0.40
 
-    def __init__(self, port):
+    def __init__(self, port, set_time_padding):
         self.port = port
         self.baudrate = 115200
+        self.set_time_padding = set_time_padding
         self.timeout = 1 # seconds for everyting except MEM=CLEAR
         # MEM=CLEAR of even two records needs a timeout of 13 or more.  20 is probably safe.
         #           flush    cmd      echo      value
@@ -951,7 +955,7 @@ class CC3000Next(object):
                 # more than one second has passed.  As such, redo the command
                 # with the current time.
                 if cmd.startswith("TIME=") and cmd != "TIME=?":
-                    cmd = self._compose_set_time_command()
+                    cmd = self._compose_set_time_command(self.set_time_padding)
                 # Retry
             else:
                 # Success, the reading of the echoed command did not time out.
@@ -1055,23 +1059,23 @@ class CC3000Next(object):
         return tstr
 
     @staticmethod
-    def _compose_set_time_command():
+    def _compose_set_time_command(set_time_padding):
         # The time can only be set to a full second.  As such, the actual
         # time can vary wildly.  Let's sleep until the top of the second
         # to get a better time set.
         sleep_secs = 1.0 - (time.time() % 1)
         # There is some lag,set time a little early.
-        sleep_secs -= 0.19
+        sleep_secs -= set_time_padding
         if sleep_secs > 0.0:
             time.sleep(sleep_secs)
         ts = time.time()
         # Add back the time we subtracted from sleep so we get the right second.
-        tstr = time.strftime("%Y/%m/%d %H:%M:%S", time.localtime(ts + 0.19))
-        log.info("Set time to %s (%s)" % (tstr, ts))
+        tstr = time.strftime("%Y/%m/%d %H:%M:%S", time.localtime(ts + set_time_padding))
+        log.info("Set time to %s (%s) -- set_time_padding: %f" % (tstr, ts, set_time_padding))
         return "TIME=%s" % tstr
 
     def set_time(self):
-        s = self._compose_set_time_command()
+        s = self._compose_set_time_command(self.set_time_padding)
         data = self.command(s)
         if data != 'OK':
             raise weewx.WeeWxIOError("Failed to set time to %s: %s" %
@@ -1391,6 +1395,9 @@ if __name__ == '__main__':
     parser.add_option('--port', metavar='PORT',
                       help='port to which the station is connected',
                       default=CC3000Next.DEFAULT_PORT)
+    parser.add_option('--set-time-padding', dest='set_time_padding', action='store_true',
+                      help='seconds to add when setting time (default 0.40)',
+                      default=CC3000Next.DEFAULT_SET_TIME_PADDING)
     parser.add_option('--get-version', dest='getver', action='store_true',
                       help='display firmware version')
     parser.add_option('--debug', action='store_true', default=False,
@@ -1466,7 +1473,7 @@ if __name__ == '__main__':
         _check_crc(b'MSG,2010/01/01 20:22,CHARGER ON,!4CED')
         exit(0)
 
-    with CC3000Next(options.port) as s:
+    with CC3000Next(options.port, options.set_time_padding) as s:
         s.flush()
         s.wakeup()
         s.set_echo()

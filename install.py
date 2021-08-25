@@ -68,7 +68,7 @@ def loader():
 class CC3000NextInstaller(ExtensionInstaller):
     def __init__(self):
         super(CC3000NextInstaller, self).__init__(
-            version="0.3",
+            version="0.4",
             name='CC3000Next',
             description='Capture weather data from Rainwise MK-III CC3000 stations',
             author="John A Kline",

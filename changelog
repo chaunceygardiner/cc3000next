@@ -1,4 +1,8 @@
-0.3 2021-08-??
+0.4 2021-08-25
+--------------
+Add set_time_padding to configuration.  This is added to the time when setting.  Default: 0.40.
+
+0.3 2021-08-23
 --------------
 better algorithim for setting time
 
