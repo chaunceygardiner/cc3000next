@@ -791,8 +791,16 @@ class CC3000Next(object):
         if DEBUG_OPENCLOSE:
             log.debug("Open serial port %s" % self.port)
         to = timeoutOverride if timeoutOverride is not None else self.timeout
-        self.serial_port = serial.Serial(self.port, self.baudrate,
-                                         timeout=to)
+        try:
+            self.serial_port = serial.Serial(self.port, self.baudrate,
+                                             timeout=to)
+        except OSError:
+            # On debian bullseye, the /dev/cc3000 link is sometimes not ready on a reboot
+            # (NUC7i5).  Sleep 5s, then try again.
+            log.info('Could not open serial port %s, sleeping 5s and trying again.' % self.port)
+            time.sleep(5)
+            self.serial_port = serial.Serial(self.port, self.baudrate,
+                                             timeout=to)
 
     def close(self):
         if self.serial_port is not None:
