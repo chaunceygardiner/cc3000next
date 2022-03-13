@@ -495,6 +495,31 @@ class CC3000NextDriver(weewx.drivers.AbstractDevice):
                 log.info('time_change_window: %s: %s-%s' % (key, window[0], window[1]))
 
     @staticmethod
+    def inTimeChangeWindow(time_change_windows, t):
+        """Return true if datetime value t is in a time change window."""
+        for key in time_change_windows:
+            for window in time_change_windows[key]:
+                if t > window[0] and t < window[1]:
+                    log.info("In time change transition period.")
+                    return True
+        return False
+
+    @staticmethod
+    def adjust_for_dst(now, dateTime, in_time_change_window):
+        log.debug('adjust_for_dst: now: %r, now.timestamp(): %r, dateTime: %r, in_time_change_window: %r' % (now, now.timestamp(), dateTime, in_time_change_window))
+        if in_time_change_window:
+            time_error = dateTime - now.timestamp()
+            # Check for ahead by one hour.
+            if time_error > 3580 and time_error < 3620:
+                log.info('DST adjustment: subtracted 1 hour from archive record dateTime field.')
+                return dateTime - 3600
+            # Check for behind by one hour.
+            elif time_error > -3620 and time_error < -3580:
+                log.info('DST adjustment: added 1 hour to archive record dateTime field.')
+                return dateTime + 3600
+        return dateTime
+
+    @staticmethod
     def compose_time_change_windows(dst_periods):
         fmt = '%Y-%m-%d %H:%M:%S'
         time_change_windows = {}
@@ -551,6 +576,11 @@ class CC3000NextDriver(weewx.drivers.AbstractDevice):
                     if packet and 'dateTime' in packet:
                         if not self.use_station_time:
                             packet['dateTime'] = int(time.time() + 0.5)
+                            # If inside the time change window, we could misinterpret the console
+                            # time by 1 hour.  Check for that and adjust as necessary.
+                            now = datetime.datetime.now()
+                            packet['dateTime'] = CC3000NextDriver.adjust_for_dst(
+                                now, packet['dateTime'], CC3000NextDriver.inTimeChangeWindow(self.time_change_windows, now))
                         packet['usUnits'] = self.units
                         if 'day_rain_total' in packet:
                             packet['rain'] = self._rain_total_to_delta(
@@ -642,21 +672,12 @@ class CC3000NextDriver(weewx.drivers.AbstractDevice):
         # Under no circumstances, set the time from 1:55 to 3:05 AM on the morning
         # of daylight savings time going into effect.
         # Ditto for 12:55 to to 2:05 AM on the morning of standard time going into
-        # effect.  The reason: the CC3000Next driver will report a time off by an hour,
-        # and WeeWX will "correct" the time (wreaking havoc).
-        if self.inTimeChangeWindow(datetime.datetime.now()):
+        # effect.
+        if CC3000NextDriver.inTimeChangeWindow(self.time_change_windows, datetime.datetime.now()):
+            log.info("setTime ignored during time change transition period.")
             return
 
         self.station.set_time()
-
-    def inTimeChangeWindow(self, t):
-        """Return true if datetime value t is in a time change window."""
-        for key in self.time_change_windows:
-            for window in self.time_change_windows[key]:
-                if t > window[0] and t < window[1]:
-                    log.info("Ignoring clock set during daylight savings time transition.")
-                    return True
-        return False
 
     @staticmethod
     def _init_station_with_retries(station, max_tries):
@@ -1398,6 +1419,10 @@ if __name__ == '__main__':
     parser = optparse.OptionParser(usage=usage)
     parser.add_option('--version', action='store_true',
                       help='display driver version')
+    parser.add_option('--test-in-time-change-window', dest='test_in_time_change_window', action='store_true',
+                      help='Test inTimeChangeWindow function')
+    parser.add_option('--test-dst-handling', dest='test_dst_handling', action='store_true',
+                      help='Test DST handling')
     parser.add_option('--test-crc', dest='testcrc', action='store_true',
                       help='test crc')
     parser.add_option('--port', metavar='PORT',
@@ -1465,6 +1490,146 @@ if __name__ == '__main__':
 
     if options.version:
         print("%s driver version %s" % (DRIVER_NAME, DRIVER_VERSION))
+        exit(0)
+
+    if options.test_in_time_change_window:
+        dst_periods = {
+                '2022': ['2022-03-13 02:00:00', '2022-11-06 02:00:00'],
+                '2023': ['2023-03-12 02:00:00', '2023-11-05 02:00:00'],
+                '2024': ['2024-03-10 02:00:00', '2024-11-03 02:00:00'] }
+        time_change_windows = CC3000NextDriver.compose_time_change_windows(dst_periods)
+        for key in time_change_windows:
+            for window in time_change_windows[key]:
+                print('time_change_window : %s: %s-%s' % (key, window[0], window[1]))
+
+        print('now in time change window                     : %r' % CC3000NextDriver.inTimeChangeWindow(time_change_windows, datetime.datetime.now()))
+
+        now = datetime.datetime(2022, 3, 13, 1, 54, 0)
+        if not CC3000NextDriver.inTimeChangeWindow(time_change_windows, now):
+            print('6 minutes before spring 2022 time change test : PASS')
+        else:
+            print('6 minutes before spring 2022 time change test : FAIL')
+
+        now = datetime.datetime(2022, 3, 13, 1, 59, 0)
+        if CC3000NextDriver.inTimeChangeWindow(time_change_windows, now):
+            print('1 minute before spring 2022 time change test  : PASS')
+        else:
+            print('1 minute before spring 2022 time change test  : FAIL')
+
+        now = datetime.datetime(2022, 3, 13, 2, 10, 0)
+        if CC3000NextDriver.inTimeChangeWindow(time_change_windows, now):
+            print('10 minutes after spring 2022 time change test : PASS')
+        else:
+            print('10 minutes after spring 2022 time change test : FAIL')
+
+        now = datetime.datetime(2022, 3, 13, 3, 0, 0)
+        if CC3000NextDriver.inTimeChangeWindow(time_change_windows, now):
+            print('1 hour after spring 2022 time change test     : PASS')
+        else:
+            print('1 hour after spring 2022 time change test     : FAIL')
+
+        now = datetime.datetime(2022, 3, 13, 3, 4, 59)
+        if CC3000NextDriver.inTimeChangeWindow(time_change_windows, now):
+            print('1:04:59 after spring 2022 time change test    : PASS')
+        else:
+            print('1:04:59 after spring 2022 time change test    : FAIL')
+
+        now = datetime.datetime(2022, 3, 13, 3, 6, 0)
+        if not CC3000NextDriver.inTimeChangeWindow(time_change_windows, now):
+            print('1:05   after spring 2022 time change test     : PASS')
+        else:
+            print('1:05   after spring 2022 time change test     : FAIL')
+
+        now = datetime.datetime(2023, 11, 5, 0, 54, 0)
+        if not CC3000NextDriver.inTimeChangeWindow(time_change_windows, now):
+            print('1:06      before fall   2023 time change test : PASS')
+        else:
+            print('1:06      before fall   2023 time change test : FAIL')
+
+        now = datetime.datetime(2023, 11, 5, 0, 59, 0)
+        if CC3000NextDriver.inTimeChangeWindow(time_change_windows, now):
+            print('1:01     before fall   2023 time change test  : PASS')
+        else:
+            print('1:01     before fall   2023 time change test  : FAIL')
+
+        now = datetime.datetime(2023, 11, 5, 1, 10, 0)
+        if CC3000NextDriver.inTimeChangeWindow(time_change_windows, now):
+            print('10 minutes into  fall   2023 time change test : PASS')
+        else:
+            print('10 minutes into  fall   2023 time change test : FAIL')
+
+        now = datetime.datetime(2023, 11, 5, 2, 0, 0)
+        if CC3000NextDriver.inTimeChangeWindow(time_change_windows, now):
+            print('1 hour after fall   2023 time change test     : PASS')
+        else:
+            print('1 hour after fall   2023 time change test     : FAIL')
+
+        now = datetime.datetime(2023, 11, 5, 2, 4, 59)
+        if CC3000NextDriver.inTimeChangeWindow(time_change_windows, now):
+            print('1:04:59 after fall   2023 time change test    : PASS')
+        else:
+            print('1:04:59 after fall   2023 time change test    : FAIL')
+
+        now = datetime.datetime(2023, 11, 5, 2, 6, 0)
+        if not CC3000NextDriver.inTimeChangeWindow(time_change_windows, now):
+            print('1:05   after fall   2023 time change test     : PASS')
+        else:
+            print('1:05   after fall   2023 time change test     : FAIL')
+
+        exit(0)
+
+    if options.test_dst_handling:
+        print('Testing Daylight Savings Time handling.')
+        now = datetime.datetime.now()
+
+        packet = { 'dateTime': int(now.timestamp()) }
+        packet['dateTime'] = CC3000NextDriver.adjust_for_dst(
+                now, packet['dateTime'], False)
+        if packet['dateTime'] == int(now.timestamp()):
+            print('Identical time, not in DST window, test PASSED')
+        else:
+            print('Identical time, not in DST window, test FAILED')
+
+        packet['dateTime'] = int(now.timestamp())
+        packet['dateTime'] = CC3000NextDriver.adjust_for_dst(
+                now, packet['dateTime'], True)
+        if packet['dateTime'] == int(now.timestamp()):
+            print('Identical time, in DST window, test     PASSED')
+        else:
+            print('Identical time, in DST window, test     FAILED')
+
+        packet['dateTime'] = int(now.timestamp()) - 3602
+        packet['dateTime'] = CC3000NextDriver.adjust_for_dst(
+                now, packet['dateTime'], False)
+        if packet['dateTime'] == int(now.timestamp()) - 3602:
+            print('1 hour slow, not in DST window, test    PASSED')
+        else:
+            print('1 hour slow, not in DST window, test    FAILED')
+
+        packet['dateTime'] = int(now.timestamp()) - 3602
+        packet['dateTime'] = CC3000NextDriver.adjust_for_dst(
+                now, packet['dateTime'], True)
+        if packet['dateTime'] == int(now.timestamp()) - 2:
+            print('1 hour slow, in DST window, test        PASSED')
+        else:
+            print('1 hour slow, in DST window, test        FAILED')
+
+        packet['dateTime'] = int(now.timestamp()) + 3602
+        packet['dateTime'] = CC3000NextDriver.adjust_for_dst(
+                now, packet['dateTime'], False)
+        if packet['dateTime'] == int(now.timestamp()) + 3602:
+            print('1 hour fast, not in DST window, test    PASSED')
+        else:
+            print('1 hour fast, not in DST window, test    FAILED')
+
+        packet['dateTime'] = int(now.timestamp()) + 3602
+        packet['dateTime'] = CC3000NextDriver.adjust_for_dst(
+                now, packet['dateTime'], True)
+        if packet['dateTime'] == int(now.timestamp()) + 2:
+            print('1 hour fast, in DST window, test        PASSED')
+        else:
+            print('1 hour fast, in DST window, test        FAILED')
+
         exit(0)
 
     if options.debug:
